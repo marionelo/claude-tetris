@@ -28,6 +28,88 @@ const PIECES = [
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
+const RECORDS_KEY = 'tetris.records';
+const MAX_RECORDS = 5;
+const MAX_NAME_LENGTH = 12;
+
+// In-memory copy of the records. It is also the fallback when localStorage is unavailable.
+let records = emptyRecords();
+let storageFailed = false; // set when a write to localStorage fails
+let pendingRun = null;  // finished run that may still be saved: { score, lines, level }
+let savedEntry = null;  // entry just saved on the game-over screen (highlighted)
+let comboCount = 0;     // consecutive locks that cleared at least one line
+let runBestCombo = 0;   // best combo of the current run
+
+function emptyRecords() {
+  return { scores: [], bestCombo: 0, maxLines: 0 };
+}
+
+function toCount(value) {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function sanitizeRecords(raw) {
+  const clean = emptyRecords();
+  if (!raw || typeof raw !== 'object') return clean;
+  if (Array.isArray(raw.scores)) {
+    for (const s of raw.scores) {
+      if (!s || typeof s !== 'object' || toCount(s.score) === 0) continue;
+      clean.scores.push({
+        name: String(s.name ?? '').slice(0, MAX_NAME_LENGTH),
+        score: toCount(s.score),
+        lines: toCount(s.lines),
+        level: toCount(s.level),
+        date: typeof s.date === 'string' ? s.date : '',
+      });
+    }
+    clean.scores.sort((a, b) => b.score - a.score);
+    clean.scores.splice(MAX_RECORDS);
+  }
+  clean.bestCombo = toCount(raw.bestCombo);
+  clean.maxLines = toCount(raw.maxLines);
+  return clean;
+}
+
+function loadRecords() {
+  if (storageFailed) return records; // memory holds data that storage could not take
+  try {
+    const raw = localStorage.getItem(RECORDS_KEY);
+    records = raw === null ? emptyRecords() : sanitizeRecords(JSON.parse(raw));
+  } catch (e) {
+    // Storage unavailable or corrupt data: keep using the in-memory copy.
+  }
+  return records;
+}
+
+function saveRecords() {
+  try {
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+    storageFailed = false;
+  } catch (e) {
+    // Storage unavailable or full: records only live in memory for this page.
+    storageFailed = true;
+  }
+}
+
+// Position a score would take in the (descending) table; ties go below older entries.
+function insertionIndex(value) {
+  const i = records.scores.findIndex(s => value > s.score);
+  return i === -1 ? records.scores.length : i;
+}
+
+function qualifiesForTop(value) {
+  return value > 0 && insertionIndex(value) < MAX_RECORDS;
+}
+
+function trackCombo(cleared) {
+  if (cleared > 0) {
+    comboCount++;
+    runBestCombo = Math.max(runBestCombo, comboCount);
+  } else {
+    comboCount = 0;
+  }
+}
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -136,8 +218,11 @@ function softDrop() {
 }
 
 function lockPiece() {
+  if (gameOver) return; // loop() keeps ticking after a game over triggered from inside it
   merge();
+  const linesBefore = lines;
   clearLines();
+  trackCombo(lines - linesBefore);
   spawn();
 }
 
@@ -219,12 +304,144 @@ function drawNext() {
 }
 
 function endGame() {
+  if (gameOver) return;
   gameOver = true;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
   overlay.classList.remove('hidden');
+  showGameOverRecords();
 }
+
+// ---- Records (local high-score table) ----
+const recordsPanel = document.getElementById('records-panel');
+const recordsBody = document.getElementById('records-body');
+const bestComboEl = document.getElementById('best-combo');
+const maxLinesEl = document.getElementById('max-lines');
+const recordForm = document.getElementById('record-form');
+const recordName = document.getElementById('record-name');
+const resetRecordsBtn = document.getElementById('reset-records-btn');
+const playBtn = document.getElementById('play-btn');
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '';
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+// Draws the table from `records`; while a run is pending, its future row is shown highlighted.
+function renderRecords() {
+  const rows = records.scores.slice();
+  let pendingAt = -1;
+  if (pendingRun) {
+    pendingAt = insertionIndex(pendingRun.score);
+    rows.splice(pendingAt, 0, { name: 'Tú', ...pendingRun, date: new Date().toISOString() });
+    rows.splice(MAX_RECORDS);
+  }
+
+  recordsBody.textContent = '';
+  if (rows.length === 0) {
+    const cell = recordsBody.insertRow().insertCell();
+    cell.colSpan = 6;
+    cell.className = 'records-empty';
+    cell.textContent = 'Aún no hay records';
+  }
+  rows.forEach((entry, i) => {
+    const tr = recordsBody.insertRow();
+    if (i === pendingAt || entry === savedEntry) tr.className = 'is-new';
+    [i + 1, entry.name, entry.score.toLocaleString(), entry.lines, entry.level, formatDate(entry.date)]
+      .forEach(value => { tr.insertCell().textContent = value; });
+  });
+
+  bestComboEl.textContent = records.bestCombo;
+  maxLinesEl.textContent = records.maxLines;
+  recordForm.hidden = !pendingRun;
+  recordsPanel.hidden = false;
+}
+
+// Called on every game over: stats always update, the score only enters the table once a name is saved.
+function showGameOverRecords() {
+  loadRecords();
+  records.bestCombo = Math.max(records.bestCombo, runBestCombo);
+  records.maxLines = Math.max(records.maxLines, lines);
+  saveRecords();
+  savedEntry = null;
+  pendingRun = qualifiesForTop(score) ? { score, lines, level } : null;
+  renderRecords();
+  if (pendingRun) {
+    recordName.value = '';
+    // Focus after a short delay so keys still being pressed to play don't end up in the name.
+    setTimeout(() => { if (pendingRun) recordName.focus(); }, 400);
+  }
+}
+
+function showStartScreen() {
+  board = createBoard();
+  score = 0;
+  lines = 0;
+  level = 1;
+  paused = false;
+  gameOver = true; // keeps the key handler and togglePause inert until "Jugar"
+  pendingRun = null;
+  savedEntry = null;
+  loadRecords();
+  overlayTitle.textContent = 'TETRIS';
+  overlayTitle.classList.add('is-start');
+  overlayScore.textContent = '';
+  restartBtn.hidden = true;
+  playBtn.hidden = false;
+  overlay.classList.remove('hidden');
+  renderRecords();
+  playBtn.focus();
+}
+
+// Called at the end of init(): clears per-run combo state and hides the records screen.
+function resetRunState() {
+  comboCount = 0;
+  runBestCombo = 0;
+  pendingRun = null;
+  savedEntry = null;
+  overlayTitle.classList.remove('is-start');
+  if (overlay.contains(document.activeElement)) document.activeElement.blur();
+  recordsPanel.hidden = true;
+  playBtn.hidden = true;
+  restartBtn.hidden = false;
+}
+
+recordForm.addEventListener('submit', e => {
+  e.preventDefault();
+  if (!pendingRun) return;
+  loadRecords();
+  const entry = {
+    name: recordName.value.trim().slice(0, MAX_NAME_LENGTH) || 'Anónimo',
+    ...pendingRun,
+    date: new Date().toISOString(),
+  };
+  records.scores.splice(insertionIndex(entry.score), 0, entry);
+  records.scores.splice(MAX_RECORDS);
+  savedEntry = entry;
+  pendingRun = null;
+  saveRecords();
+  renderRecords();
+});
+
+// Keep typing in the name field away from the game's global key handler.
+recordName.addEventListener('keydown', e => e.stopPropagation());
+
+resetRecordsBtn.addEventListener('click', () => {
+  if (!confirm('¿Borrar todos los records? Esta acción no se puede deshacer.')) return;
+  records = emptyRecords();
+  pendingRun = null;
+  savedEntry = null;
+  try {
+    localStorage.removeItem(RECORDS_KEY);
+  } catch (e) {
+    // Storage unavailable: nothing persisted to remove.
+  }
+  renderRecords();
+});
+
+playBtn.addEventListener('click', init);
 
 function togglePause() {
   if (gameOver) return;
@@ -269,6 +486,7 @@ function init() {
   next = randomPiece();
   spawn();
   updateHUD();
+  resetRunState();
   overlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
@@ -301,4 +519,4 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', init);
 
-init();
+showStartScreen();
