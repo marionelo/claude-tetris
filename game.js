@@ -26,6 +26,151 @@ const PIECES = [
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
 ];
 
+// ---- Skins ----
+// Each skin: { name, colors[1..7], bg, grid, draw(ctx, x, y, size, colorIndex, alpha) }.
+// draw() receives the block's top-left corner in pixels and is called as a method of
+// the skin (uses this.colors); drawBlock() wraps it in save()/restore() and sets
+// ctx.globalAlpha = alpha beforehand. Offsets scale with `size`. applySkin() publishes
+// `bg` as the --canvas-bg CSS variable, which the canvases show behind the blocks.
+const DEFAULT_SKIN = 'retro';
+const SKIN_STORAGE_KEY = 'tetris.skin';
+
+function roundedRectPath(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+const SKINS = {
+  // Flat square blocks with a top highlight (the original look).
+  retro: {
+    name: 'Retro',
+    colors: COLORS,
+    bg: '#1a1a25',
+    grid: '#22222e',
+    draw(c, x, y, size, colorIndex) {
+      c.fillStyle = this.colors[colorIndex];
+      c.fillRect(x + 1, y + 1, size - 2, size - 2);
+      c.fillStyle = 'rgba(255,255,255,0.12)';
+      c.fillRect(x + 1, y + 1, size - 2, 4);
+    },
+  },
+
+  // Black background, glowing outlined blocks.
+  neon: {
+    name: 'Neón',
+    colors: [
+      null,
+      '#00f0ff', // I
+      '#fff200', // O
+      '#d500f9', // T
+      '#39ff14', // S
+      '#ff1744', // Z
+      '#2979ff', // J
+      '#ff9100', // L
+    ],
+    bg: '#000000',
+    grid: '#16162a',
+    draw(c, x, y, size, colorIndex, alpha) {
+      const color = this.colors[colorIndex];
+      const m = size * 0.1;
+      // Floor the outline alpha so the 0.2 ghost stays readable on a black board.
+      c.globalAlpha = Math.max(alpha, 0.45);
+      c.shadowColor = color;
+      c.shadowBlur = size * 0.45;
+      c.strokeStyle = color;
+      c.lineWidth = 2;
+      c.strokeRect(x + m, y + m, size - 2 * m, size - 2 * m);
+      // Reset the glow before the translucent core so it is not blurred as well.
+      c.shadowBlur = 0;
+      c.shadowColor = 'rgba(0,0,0,0)';
+      c.globalAlpha = alpha * 0.3;
+      c.fillStyle = color;
+      c.fillRect(x + m, y + m, size - 2 * m, size - 2 * m);
+    },
+  },
+
+  // Soft palette, rounded corners and a gentle gloss.
+  pastel: {
+    name: 'Pastel',
+    colors: [
+      null,
+      '#a8e6f0', // I
+      '#fff0a6', // O
+      '#d9b8f5', // T
+      '#b5e8bf', // S
+      '#f7b3b8', // Z
+      '#b4bef5', // J
+      '#ffd3a3', // L
+    ],
+    bg: '#2b2540',
+    grid: '#383152',
+    draw(c, x, y, size, colorIndex) {
+      c.fillStyle = this.colors[colorIndex];
+      roundedRectPath(c, x + 1.5, y + 1.5, size - 3, size - 3, size * 0.3);
+      c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.38)';
+      roundedRectPath(c, x + size * 0.2, y + size * 0.15, size * 0.6, size * 0.2, size * 0.1);
+      c.fill();
+    },
+  },
+
+  // 8-bit look: every block carries a grid of light/dark pixels.
+  pixel: {
+    name: 'Pixel art',
+    colors: [
+      null,
+      '#29adff', // I
+      '#ffec27', // O
+      '#ff77a8', // T
+      '#00e436', // S
+      '#ff004d', // Z
+      '#7e6bff', // J
+      '#ffa300', // L
+    ],
+    bg: '#14172b',
+    grid: '#1f2442',
+    draw(c, x, y, size, colorIndex) {
+      const n = 7;                  // 7x7 whole-pixel cells, centered in the block
+      const px = Math.max(1, Math.floor((size - 2) / n));
+      const inner = px * n;
+      const ox = x + Math.floor((size - inner) / 2);
+      const oy = y + Math.floor((size - inner) / 2);
+      c.fillStyle = this.colors[colorIndex];
+      c.fillRect(ox, oy, inner, inner);
+      // dithered interior: light and dark pixels in a checkerboard
+      c.beginPath();
+      for (let i = 1; i < n - 1; i++)
+        for (let j = 1; j < n - 1; j++)
+          if ((i + j) % 2 === 0) c.rect(ox + j * px, oy + i * px, px, px);
+      c.fillStyle = 'rgba(255,255,255,0.14)';
+      c.fill();
+      c.beginPath();
+      for (let i = 1; i < n - 1; i++)
+        for (let j = 1; j < n - 1; j++)
+          if ((i + j) % 2 === 1) c.rect(ox + j * px, oy + i * px, px, px);
+      c.fillStyle = 'rgba(0,0,0,0.12)';
+      c.fill();
+      // bevel: light top/left edge, dark bottom/right edge
+      c.fillStyle = 'rgba(255,255,255,0.5)';
+      c.fillRect(ox, oy, inner, px);
+      c.fillRect(ox, oy + px, px, inner - px);
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      c.fillRect(ox + px, oy + inner - px, inner - px, px);
+      c.fillRect(ox + inner - px, oy + px, px, inner - 2 * px);
+      // specular pixel
+      c.fillStyle = 'rgba(255,255,255,0.85)';
+      c.fillRect(ox + px, oy + px, px, px);
+    },
+  },
+};
+
+let currentSkin = SKINS[DEFAULT_SKIN];
+
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
 const canvas = document.getElementById('board');
@@ -158,18 +303,15 @@ function updateHUD() {
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
-  context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+  const a = alpha ?? 1;
+  context.save(); // a skin can't leak shadow/stroke/alpha state into later blocks
+  context.globalAlpha = a;
+  currentSkin.draw(context, x * size, y * size, size, colorIndex, a);
+  context.restore();
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = currentSkin.grid;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -184,6 +326,66 @@ function drawGrid() {
     ctx.stroke();
   }
 }
+
+// ---- Skin selector: apply / persist ----
+const skinSelect = document.getElementById('skin-select');
+
+function isSkinId(id) {
+  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id);
+}
+
+function loadSavedSkin() {
+  try {
+    const saved = localStorage.getItem(SKIN_STORAGE_KEY);
+    if (isSkinId(saved)) return saved;
+  } catch (e) { /* storage unavailable: fall through to the default */ }
+  return DEFAULT_SKIN;
+}
+
+function saveSkin(id) {
+  try {
+    localStorage.setItem(SKIN_STORAGE_KEY, id);
+  } catch (e) { /* storage unavailable or full: the skin just won't persist */ }
+}
+
+// Switches the skin without touching game state. Safe to call before the game exists
+// (board/current/next undefined), while paused and after game over.
+function applySkin(id) {
+  if (!isSkinId(id)) id = DEFAULT_SKIN;
+  currentSkin = SKINS[id];
+  document.body.dataset.skin = id;
+  document.body.style.setProperty('--canvas-bg', currentSkin.bg);
+  if (skinSelect) skinSelect.value = id;
+  if (board && current) {
+    draw();
+    if (next) drawNext();
+  }
+  return id;
+}
+
+if (skinSelect) {
+  for (const id of Object.keys(SKINS)) {
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = SKINS[id].name;
+    skinSelect.appendChild(option);
+  }
+  skinSelect.addEventListener('change', () => {
+    saveSkin(applySkin(skinSelect.value));
+    skinSelect.blur(); // so Space/arrows keep controlling the game, not the select
+  });
+  // If the select still has focus (e.g. its dropdown was dismissed without a change),
+  // game keys must drive the game, not the select: cancel the select's own handling
+  // and drop focus; the event still bubbles to the game's document listener.
+  const GAME_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyX', 'KeyP'];
+  skinSelect.addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey || !GAME_KEYS.includes(e.code)) return;
+    e.preventDefault();
+    skinSelect.blur();
+  });
+}
+
+applySkin(loadSavedSkin());
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
