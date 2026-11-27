@@ -96,6 +96,157 @@ kbd {
   color: #aaa;
 }
 
+/* ---- Menú de pausa ---- */
+.pause-menu {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 20, 0.82);
+  backdrop-filter: blur(4px);
+  border-radius: 4px;
+}
+
+.pause-menu.hidden {
+  display: none;
+}
+
+.pause-box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 220px;
+  text-align: center;
+}
+
+#pause-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #7aa2f7;
+  margin-bottom: 6px;
+}
+
+.pause-btn {
+  background: transparent;
+  color: #c0c8e8;
+  border: 1px solid #3a3a5a;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pause-btn:hover {
+  background: #22223a;
+  border-color: #7aa2f7;
+}
+
+.pause-btn.primary {
+  background: #7aa2f7;
+  color: #0f0f17;
+  border-color: #7aa2f7;
+}
+
+.pause-btn.primary:hover {
+  background: #9bbdff;
+  border-color: #9bbdff;
+}
+
+.pause-btn:focus-visible {
+  outline: 2px solid #9bbdff;
+  outline-offset: 2px;
+}
+
+.pause-controls {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: #1a1a25;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+}
+
+.pause-controls.hidden {
+  display: none;
+}
+
+.pause-controls li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.pause-controls .keys {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.pause-level {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #888;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-btn {
+  width: 26px;
+  height: 26px;
+  background: #22223a;
+  color: #c0c8e8;
+  border: 1px solid #3a3a5a;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.step-btn:hover {
+  background: #2c2c4a;
+  border-color: #7aa2f7;
+}
+
+.step-btn:focus-visible {
+  outline: 2px solid #9bbdff;
+  outline-offset: 2px;
+}
+
+#start-level {
+  min-width: 22px;
+  text-align: center;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: #7aa2f7;
+}
+
+.pause-hint {
+  font-size: 11px;
+  color: #555570;
+}
+
 /* ---- Overlay ---- */
 .overlay {
   position: absolute;
