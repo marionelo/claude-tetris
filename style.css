@@ -70,6 +70,66 @@ body {
   border-radius: 4px;
 }
 
+/* ---- Skins ---- */
+/* game.js sets body[data-skin] and the inline --canvas-bg (SKINS[*].bg); the canvases are
+   transparent, so these show behind the blocks. Defaults below = retro (also the no-JS look). */
+body {
+  --canvas-bg: #1a1a25;
+  --canvas-border: #2a2a3a;
+  --board-glow: rgba(0, 0, 0, 0.6);
+}
+
+body[data-skin='neon'] {
+  --canvas-border: #00a8b5;
+  --board-glow: rgba(0, 240, 255, 0.25);
+}
+
+body[data-skin='pastel'] {
+  --canvas-border: #5a4f7a;
+  --board-glow: rgba(217, 184, 245, 0.18);
+}
+
+body[data-skin='pixel'] {
+  --canvas-border: #3a4275;
+  --board-glow: rgba(0, 0, 0, 0.6);
+}
+
+body #board,
+body #next-canvas {
+  background: var(--canvas-bg);
+  border-color: var(--canvas-border);
+}
+
+body #board {
+  box-shadow: 0 0 40px var(--board-glow);
+}
+
+/* Keep the picker above the pause / game-over overlay so skins can be previewed there. */
+.skin-picker {
+  position: relative;
+  z-index: 1;
+}
+
+#skin-select {
+  background: #22223a;
+  border: 1px solid #3a3a5a;
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #aaa;
+  cursor: pointer;
+}
+
+#skin-select:hover {
+  border-color: #7aa2f7;
+}
+
+#skin-select:focus-visible {
+  outline: 2px solid #7aa2f7;
+  outline-offset: 1px;
+}
+
 /* ---- Controles ---- */
 .controls ul {
   list-style: none;
